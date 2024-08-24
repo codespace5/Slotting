@@ -1,0 +1,364 @@
+Sub AllocateInventory()
+    Dim wsProducts As Worksheet
+    Dim wsIncoming As Worksheet
+    Dim wsOutput As Worksheet
+    Dim wsBins As Worksheet
+    Dim lastRowProducts As Long
+    Dim lastRowIncoming As Long
+    Dim lastRowBins As Long
+    Dim i As Long, j As Long, k As Long
+    Dim incomingSKU As String
+    Dim incomingQty As Integer
+    Dim availableQty As Integer
+    Dim binCapacity As Integer
+    Dim remainingQty As Integer
+    Dim binName As String
+    Dim excludedBins As Variant
+    Dim isExcluded As Boolean
+    Dim allbins_BinName As String
+    Dim allbins_qty As Integer
+    Dim allbins_capacity As Integer
+    Dim binLevel As Integer
+
+    ' Set worksheets
+    Set wsProducts = ThisWorkbook.Sheets("ProductsBins")
+    Set wsIncoming = ThisWorkbook.Sheets("PackingSlip")
+    Set wsBins = ThisWorkbook.Sheets("Bins")
+    Set wsOutput = ThisWorkbook.Sheets("Output")
+
+    ' Get last rows
+    lastRowProducts = wsProducts.Cells(wsProducts.Rows.Count, "A").End(xlUp).Row
+    lastRowIncoming = wsIncoming.Cells(wsIncoming.Rows.Count, "A").End(xlUp).Row
+    lastRowBins = wsBins.Cells(wsBins.Rows.Count, "A").End(xlUp).Row
+
+    ' Clear the output sheet
+    wsOutput.Cells.Clear
+
+    ' Copy headers to output sheet
+    wsIncoming.Rows(1).Copy Destination:=wsOutput.Rows(1)
+    wsOutput.Cells(1, 3).Value = "Bin"
+    wsOutput.Cells(1, 4).Value = "Notes"
+
+    ' Define excluded bins
+    excludedBins = Array("PutAwayBin-274", "ReceivingBin-Warehouse-274", "Returns-Damaged", "PickingBin-Warehouse-274", "Returns-Damaged-Light")
+
+    For i = 2 To lastRowIncoming
+        incomingSKU = wsIncoming.Cells(i, 2).Value
+        incomingQty = wsIncoming.Cells(i, 1).Value
+        remainingQty = incomingQty
+
+        wsOutput.Cells(i, 1).Value = wsIncoming.Cells(i, 1).Value
+        wsOutput.Cells(i, 2).Value = wsIncoming.Cells(i, 2).Value
+
+        ' Check existing bins
+        For j = 2 To lastRowProducts
+            If wsProducts.Cells(j, 5).Value = incomingSKU Then
+                availableQty = wsProducts.Cells(j, 4).Value
+                binCapacity = wsProducts.Cells(j, 7).Value
+                binName = wsProducts.Cells(j, 2).Value
+
+                ' Check if the bin is excluded
+                isExcluded = False
+                For Each excludedBin In excludedBins
+                    If binName = excludedBin Then
+                        isExcluded = True
+                        Exit For
+                    End If
+                Next excludedBin
+
+                ' Check if the bin is not excluded and there is enough space
+                If Not isExcluded And (availableQty + remainingQty) <= binCapacity And availableQty > 0 Then
+                    wsOutput.Cells(i, 3).Value = binName
+                    remainingQty = 0
+                    Exit For
+                ElseIf Not isExcluded And (availableQty + remainingQty) > binCapacity And availableQty > 0 Then
+                    ' Not enough space in this bin, but there is still some space left
+                    wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & binName & ", "
+                    remainingQty = remainingQty - (binCapacity - availableQty)
+                End If
+            End If
+        Next j
+
+        ' Allocate remainingQty to correct bin levels
+        If remainingQty > 0 And (remainingQty - incomingQty) = 0 Then
+            Dim lastDigit As Integer
+            lastDigit = remainingQty Mod 10
+
+            For k = 2 To lastRowBins
+                allbins_BinName = wsBins.Cells(k, 2).Value
+                allbins_qty = wsBins.Cells(k, 10).Value
+                allbins_capacity = wsBins.Cells(k, 11).Value
+
+                ' Extract bin level by finding the position of the dash and converting the subsequent part to an integer
+                Dim dashPos As Integer
+                dashPos = InStr(allbins_BinName, "-")
+                
+                If dashPos > 0 Then
+                    On Error Resume Next
+                    binLevel = CInt(Mid(allbins_BinName, dashPos + 1))
+                Else
+                    binLevel = 0 ' Set a default value if the format is unexpected
+                End If
+
+                wsOutput.Cells(i, 3).Value = binLevel
+
+                ' Determine the bin level based on the last digit of remainingQty
+                If allbins_qty = 0 Then
+                    Select Case lastDigit
+                        Case 4, 3, 2, 8 ' Include -28 as well since it was grouped with 2
+                            If binLevel >= 3 Then
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        Case 6, 5
+                            If binLevel = 2 Or binLevel = 3 Then
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        Case 2, 0, 9, 8 ' Include -12, -10 as well
+                            If binLevel = 1 Or binLevel = 2 Then
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                remainingQty = 0
+                                Exit For
+                            End If
+                    End Select
+                End If
+            Next k
+        End If
+    Next i
+End Sub
+
+
+
+
+
+
+
+
+
+' Sub AllocateInventory()
+'     Dim wsProducts As Worksheet
+'     Dim wsIncoming As Worksheet
+'     Dim wsOutput As Worksheet
+'     Dim wsBins As Worksheet
+'     Dim lastRowProducts As Long
+'     Dim lastRowIncoming As Long
+'     Dim lastRowBins As Long
+'     Dim i As Long, j As Long, k As Long
+'     Dim incomingSKU As String
+'     Dim incomingQty As Integer
+'     Dim availableQty As Integer
+'     Dim binCapacity As Integer
+'     Dim remainingQty As Integer
+'     Dim binName As String
+'     Dim excludedBins As Variant
+'     Dim isExcluded As Boolean
+'     Dim allbins_BinName As String
+'     Dim allbins_qty As Integer
+'     Dim allbins_capacity As Integer
+'     Dim binLevel As Integer
+    
+'     ' Set worksheets
+'     Set wsProducts = ThisWorkbook.Sheets("ProductsBins")
+'     Set wsIncoming = ThisWorkbook.Sheets("PackingSlip")
+'     Set wsBins = ThisWorkbook.Sheets("Bins")
+'     Set wsOutput = ThisWorkbook.Sheets("Output")
+    
+'     ' Get last rows
+'     lastRowProducts = wsProducts.Cells(wsProducts.Rows.Count, "A").End(xlUp).Row
+'     lastRowIncoming = wsIncoming.Cells(wsIncoming.Rows.Count, "A").End(xlUp).Row
+'     lastRowBins = wsBins.Cells(wsBins.Rows.Count, "A").End(xlUp).Row
+    
+'     ' Clear the output sheet
+'     wsOutput.Cells.Clear
+    
+'     ' Copy headers to output sheet
+'     wsIncoming.Rows(1).Copy Destination:=wsOutput.Rows(1)
+'     wsOutput.Cells(1, 3).Value = "Bin"
+'     wsOutput.Cells(1, 4).Value = "Notes"
+    
+'     ' Define excluded bins
+'     excludedBins = Array("PutAwayBin-274", "ReceivingBin-Warehouse-274", "Returns-Damaged", "PickingBin-Warehouse-274", "Returns-Damaged-Light")
+    
+'     ' Loop through incoming inventory
+'     For i = 2 To lastRowIncoming
+'         incomingSKU = wsIncoming.Cells(i, 2).Value
+'         incomingQty = wsIncoming.Cells(i, 1).Value
+'         remainingQty = incomingQty
+        
+'         wsOutput.Cells(i, 1).Value = wsIncoming.Cells(i, 1).Value
+'         wsOutput.Cells(i, 2).Value = wsIncoming.Cells(i, 2).Value
+        
+'         ' Check existing bins
+'         For j = 2 To lastRowProducts
+'             If wsProducts.Cells(j, 5).Value = incomingSKU Then
+'                 availableQty = wsProducts.Cells(j, 4).Value
+'                 binCapacity = wsProducts.Cells(j, 7).Value
+'                 binName = wsProducts.Cells(j, 2).Value
+                
+'                 ' Check if the bin is excluded
+'                 isExcluded = False
+'                 For Each excludedBin In excludedBins
+'                     If binName = excludedBin Then
+'                         isExcluded = True
+'                         Exit For
+'                     End If
+'                 Next excludedBin
+                
+'                 ' Check if the bin is not excluded and there is enough space
+'                 If Not isExcluded And (availableQty + remainingQty) <= binCapacity And availableQty > 0 Then
+'                     wsOutput.Cells(i, 3).Value = binName
+'                     remainingQty = 0
+'                     Exit For
+'                 ElseIf Not isExcluded And (availableQty + remainingQty) > binCapacity And availableQty > 0 Then
+'                     ' Not enough space in this bin, but there is still some space left
+'                     wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & binName & ", "
+'                     remainingQty = remainingQty - (binCapacity - availableQty)
+'                 End If
+'             End If
+'         Next j
+        
+'         ' Allocate remainingQty to correct bin levels
+'         If remainingQty > 0 Then
+'             Dim lastDigit As Integer
+'             lastDigit = remainingQty Mod 10
+            
+'             For k = 2 To lastRowBins
+'                 allbins_BinName = wsBins.Cells(k, 2).Value
+'                 allbins_qty = wsBins.Cells(k, 10).Value
+'                 allbins_capacity = wsBins.Cells(k, 11).Value
+                
+'                 ' Extract bin level by finding the position of the dash and converting the subsequent part to an integer
+'                 Dim dashPos As Integer
+'                 dashPos = InStr(allbins_BinName, "-")
+'                 If dashPos > 0 Then
+'                     On Error Resume Next
+'                     binLevel = CInt(Mid(allbins_BinName, dashPos + 1))
+'                     On Error GoTo 0
+'                 Else
+'                     binLevel = 0 ' Set a default value if the format is unexpected
+'                 End If
+                
+'                 ' Determine the bin level based on the last digit of remainingQty
+'                 If allbins_qty = 0 Then
+'                     Select Case lastDigit
+'                         Case 4, 3, 2, 8 ' Include -28 as well since it was grouped with 2
+'                             If binLevel >= 3 Then
+'                                 wsOutput.Cells(i, 3).Value = allbins_BinName
+'                                 remainingQty = 0
+'                                 Exit For
+'                             End If
+'                         Case 6, 5
+'                             If binLevel = 2 Or binLevel = 3 Then
+'                                 wsOutput.Cells(i, 3).Value = allbins_BinName
+'                                 remainingQty = 0
+'                                 Exit For
+'                             End If
+'                         Case 2, 0, 9, 8 ' Include -12, -10 as well
+'                             If binLevel = 1 Or binLevel = 2 Then
+'                                 wsOutput.Cells(i, 3).Value = allbins_BinName
+'                                 remainingQty = 0
+'                                 Exit For
+'                             End If
+'                     End Select
+'                 End If
+'             Next k
+'         End If
+        
+'         ' Add a note if there is remainingQty left
+'     Next i
+' End Sub
+
+
+
+
+
+
+
+' Sub AllocateInventory()
+'     Dim wsProducts As Worksheet
+'     Dim wsIncoming As Worksheet 
+'     Dim wsOutput As Worksheet
+'     Dim lastRowProducts As Long
+'     Dim lastRowIncoming As Long
+'     Dim i As Long, j As Long
+'     Dim incomingSKU As String
+'     Dim incomingQty As Integer
+'     Dim availableQty As Integer
+'     Dim binCapacity As Integer
+'     Dim remainingQty As Integer
+'     Dim binName As String
+'     Dim excludedBins As Variant
+'     Dim isExcluded As Boolean
+    
+'     ' Set worksheets
+'     Set wsProducts = ThisWorkbook.Sheets("ProductsBins")
+'     Set wsIncoming = ThisWorkbook.Sheets("PackingSlip")
+'     Set wsOutput = ThisWorkbook.Sheets("Output")
+    
+'     ' Get last rows
+'     lastRowProducts = wsProducts.Cells(wsProducts.Rows.Count, "A").End(xlUp).Row
+'     lastRowIncoming = wsIncoming.Cells(wsIncoming.Rows.Count, "A").End(xlUp).Row
+    
+'     ' Clear the output sheet
+'     wsOutput.Cells.Clear
+    
+'     ' Copy headers to output sheet
+'     wsIncoming.Rows(1).Copy Destination:=wsOutput.Rows(1)
+'     wsOutput.Cells(1, 3).Value = "Bin"
+'     wsOutput.Cells(1, 4).Value = "Notes"
+    
+'     ' Define excluded bins
+'     excludedBins = Array("PutAwayBin-274", "ReceivingBin-Warehouse-274", "Returns-Damaged", "PickingBin-Warehouse-274", "Returns-Damaged-Light")
+    
+'     ' Loop through incoming inventory
+    ' For i = 2 To lastRowIncoming
+    '     incomingSKU = wsIncoming.Cells(i, 2).Value
+    '     incomingQty = wsIncoming.Cells(i, 1).Value
+    '     remainingQty = incomingQty
+        
+    '     wsOutput.Cells(i, 1).Value = wsIncoming.Cells(i, 1).Value
+    '     wsOutput.Cells(i, 2).Value = wsIncoming.Cells(i, 2).Value
+        
+    '     ' Check existing bins
+    '     For j = 2 To lastRowProducts
+    '         If wsProducts.Cells(j, 5).Value = incomingSKU Then
+    '             availableQty = wsProducts.Cells(j, 4).Value
+    '             binCapacity = wsProducts.Cells(j, 7).Value
+    '             binName = wsProducts.Cells(j, 2).Value
+                
+    '             ' Check if the bin is excluded
+    '             isExcluded = False
+    '             For Each excludedBin In excludedBins
+    '                 If binName = excludedBin Then
+    '                     isExcluded = True
+    '                     Exit For
+    '                 End If
+    '             Next excludedBin
+                
+    '             ' Check if the bin is not excluded and there is enough space
+    '             If Not isExcluded And (availableQty + remainingQty) <= binCapacity And availableQty > 0 Then
+    '                 wsOutput.Cells(i, 3).Value = binName
+    '                 remainingQty = 0
+    '                 Exit For
+    '             ElseIf Not isExcluded And (availableQty + remainingQty) > binCapacity And availableQty > 0 Then
+    '                 ' Not enough space in this bin, but there is still some space left
+    '                 wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & binName & ", "
+    '                 remainingQty = remainingQty - (binCapacity - availableQty)
+    '             End If
+    '         End If
+    '     Next j
+    ' Next i
+' End Sub
+
+
+
+
+
+
+
+
+
+

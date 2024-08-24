@@ -1,0 +1,88 @@
+Sub AllocateInventory()
+    Dim wsProducts As Worksheet
+    Dim wsIncoming As Worksheet
+    Dim wsOutput As Worksheet
+    Dim lastRowProducts As Long
+    Dim lastRowIncoming As Long
+    Dim i As Long, j As Long
+    Dim incomingSKU As String
+    Dim incomingQty As Integer
+    Dim availableQty As Integer
+    Dim binCapacity As Integer
+    Dim remainingQty As Integer
+    Dim quantity As Integer
+    Dim SKU As Integer
+    
+    ' Set worksheets
+    Set wsProducts = ThisWorkbook.Sheets("ProductsBins")
+    Set wsIncoming = ThisWorkbook.Sheets("PackingSlip")
+    Set wsOutput = ThisWorkbook.Sheets("Output")
+    
+    ' Get last rows
+    lastRowProducts = wsProducts.Cells(wsProducts.Rows.Count, "A").End(xlUp).Row
+    lastRowIncoming = wsIncoming.Cells(wsIncoming.Rows.Count, "A").End(xlUp).Row
+    
+    ' Clear the output sheet
+    wsOutput.Cells.Clear
+    
+    ' Copy headers to output sheet
+    wsIncoming.Rows(1).Copy Destination:=wsOutput.Rows(1)
+    wsOutput.Cells(1, 3).Value = "BinLocation"
+    
+    ' Loop through incoming inventory
+    For i = 2 To lastRowIncoming
+        incomingSKU = wsIncoming.Cells(i, 2).Value
+        incomingQty = wsIncoming.Cells(i, 1).Value
+        remainingQty = incomingQty
+        
+        wsOutput.Cells(i, 1).Value = wsIncoming.Cells(i, 1).Value
+        wsOutput.Cells(i, 2).Value = wsIncoming.Cells(i, 2).Value
+        
+        ' Check existing bins
+        For j = 2 To lastRowProducts
+            If wsProducts.Cells(j, 6).Value = incomingSKU Then
+                availableQty = wsProducts.Cells(j, 4).Value
+                binCapacity = wsProducts.Cells(j, 7).Value
+                
+                ' Check if there is enough space in the bin
+                If (availableQty + remainingQty) <= binCapacity Then
+                    wsOutput.Cells(i, 3).Value = wsProducts.Cells(j, 2).Value
+                    remainingQty = 0
+                    Exit For
+                Else
+                    remainingQty = remainingQty - (binCapacity - availableQty)
+                    wsOutput.Cells(i, 3).Value = wsProducts.Cells(j, 2).Value & "; "
+                End If
+            End If
+        Next j
+        
+        ' If remainingQty is not zero, allocate to a new bin
+        If remainingQty > 0 Then
+            For j = 2 To lastRowProducts
+                If wsProducts.Cells(j, 4).Value = 0 Then
+                    binCapacity = wsProducts.Cells(j, 7).Value
+                    If remainingQty <= binCapacity Then
+                        wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & wsProducts.Cells(j, 2).Value
+                        remainingQty = 0
+                        Exit For
+                    End If
+                End If
+            Next j
+        End If
+        
+        ' If still remaining, allocate to multiple new bins
+        If remainingQty > 0 Then
+            For j = 2 To lastRowProducts
+                If wsProducts.Cells(j, 4).Value = 0 Then
+                    binCapacity = wsProducts.Cells(j, 7).Value
+                    wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & wsProducts.Cells(j, 2).Value & "; "
+                    remainingQty = remainingQty - binCapacity
+                    If remainingQty <= 0 Then
+                        Exit For
+                    End If
+                End If
+            Next j
+        End If
+    Next i
+End Sub
+

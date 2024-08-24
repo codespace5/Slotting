@@ -1,0 +1,306 @@
+Function ExtractBinLevel(allbins_BinName As String) As Integer
+    Dim dashPos1 As Integer
+    Dim dashPos2 As Integer
+    Dim parts() As String
+    
+    ' Check if the name contains multiple hyphens
+    parts = Split(allbins_BinName, "-")
+    
+    If UBound(parts) >= 2 Then
+        ' Case with multiple hyphens like AisleC-2-11
+        ExtractBinLevel = CInt(parts(1))
+    ElseIf UBound(parts) = 1 Then
+        ' Case with single hyphen like F4-10 or B1-8
+        dashPos1 = InStr(allbins_BinName, "-")
+        If IsNumeric(Mid(allbins_BinName, dashPos1 - 1, 1)) Then
+            ExtractBinLevel = CInt(Mid(allbins_BinName, dashPos1 - 1, 1))
+        Else
+            ExtractBinLevel = CInt(Mid(allbins_BinName, dashPos1 + 1, 1))
+        End If
+    End If
+End Function
+
+Sub AllocateInventory()
+    Dim wsProducts As Worksheet
+    Dim wsIncoming As Worksheet
+    Dim wsOutput As Worksheet
+    Dim wsBins As Worksheet
+    Dim lastRowProducts As Long
+    Dim lastRowIncoming As Long
+    Dim lastRowBins As Long
+    Dim i As Long, j As Long, k As Long, n As Long, m As Long
+    Dim incomingSKU As String
+    Dim incomingQty As Integer
+    Dim availableQty As Integer
+    Dim binCapacity As Integer
+    Dim remainingQty As Integer
+    Dim binName As String
+    Dim excludedBins As Variant
+    Dim isExcluded As Boolean
+    Dim allbins_BinName As String
+    Dim allbins_qty As Integer
+    Dim allbins_capacity As Integer
+    Dim allbins_sku As String
+    Dim binLevel As Integer
+    Dim binNumber As Integer
+    Dim list_capacity As Integer
+    Dim uniqueCapacities As Collection
+    Dim capacitiesArray() As Integer
+    Dim temp As Integer
+    Dim x As Integer, y As Integer
+    Dim base_allbins_BinName As String 
+
+    ' Set worksheets
+    Set wsProducts = ThisWorkbook.Sheets("ProductsBins")
+    Set wsIncoming = ThisWorkbook.Sheets("PackingSlip")
+    Set wsBins = ThisWorkbook.Sheets("Bins")
+    Set wsOutput = ThisWorkbook.Sheets("Output")
+
+    ' Get last rows
+    lastRowProducts = wsProducts.Cells(wsProducts.Rows.Count, "A").End(xlUp).Row
+    lastRowIncoming = wsIncoming.Cells(wsIncoming.Rows.Count, "A").End(xlUp).Row
+    lastRowBins = wsBins.Cells(wsBins.Rows.Count, "A").End(xlUp).Row
+
+    ' Clear the output sheet
+    wsOutput.Cells.Clear
+
+    ' Copy headers to output sheet
+    wsIncoming.Rows(1).Copy Destination:=wsOutput.Rows(1)
+    wsOutput.Cells(1, 3).Value = "Bin"
+    wsOutput.Cells(1, 4).Value = "Notes"
+
+    ' Define excluded bins
+    excludedBins = Array("PutAwayBin-274", "ReceivingBin-Warehouse-274", "Returns-Damaged", "PickingBin-Warehouse-274", "Returns-Damaged-Light")
+
+    For i = 2 To lastRowIncoming
+        incomingSKU = wsIncoming.Cells(i, 2).Value
+        incomingQty = wsIncoming.Cells(i, 1).Value
+        remainingQty = incomingQty
+
+        wsOutput.Cells(i, 1).Value = wsIncoming.Cells(i, 1).Value
+        wsOutput.Cells(i, 2).Value = wsIncoming.Cells(i, 2).Value
+
+        ' Check existing bins
+        For j = 2 To lastRowProducts
+            If wsProducts.Cells(j, 5).Value = incomingSKU Then
+                availableQty = wsProducts.Cells(j, 4).Value
+                binCapacity = wsProducts.Cells(j, 7).Value
+                binName = wsProducts.Cells(j, 2).Value
+
+                ' Check if the bin is excluded
+                isExcluded = False
+                For Each excludedBin In excludedBins
+                    If binName = excludedBin Then
+                        isExcluded = True
+                        Exit For
+                    End If
+                Next excludedBin
+
+                ' Check if the bin is not excluded and there is enough space
+                If Not isExcluded And (availableQty + remainingQty) <= binCapacity And availableQty > 0 Then
+                    wsOutput.Cells(i, 3).Value = binName
+                    remainingQty = 0
+                    Exit For
+                ElseIf Not isExcluded And (availableQty + remainingQty) > binCapacity And availableQty > 0 Then
+                    ' Not enough space in this bin, but there is still some space left
+                    wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & binName & ", "
+                    remainingQty = remainingQty - (binCapacity - availableQty)
+                End If
+            End If
+        Next j
+
+        ' Allocate remainingQty to correct bin levels
+        If remainingQty > 0 And (remainingQty - incomingQty) = 0 Then
+
+            ' Extract bin level by finding the position of the dash and converting the subsequent part to an integer
+            Dim dashPos As Integer
+            Dim skuPos  As Integer
+            dashPos = InStr(allbins_BinName, "-")
+            skuPos = InStr(incomingSKU, "-")    
+            dashPos = InStr(incomingSKU, "-")
+            Dim dashPosBin As Integer
+            dashPosBin = InStr(incomingSKU, "-")
+            If dashPosBin > 0 Then
+                binNumber = CInt(Mid(incomingSKU, dashPosBin + 1))
+            Else
+                binNumber = 0 ' Default value if no dash is found
+            End If
+            If binNumber > 0 Then
+                Select Case binNumber
+                    Case 4, 3, 2, 8 ' Include -28 as well since it was grouped with 2
+                        binLevel = 3
+                    Case 6, 5
+                        binLevel = 2
+                    Case 2, 0, 9, 8 ' Include -12, -10 as well
+                        binLevel = 1
+                End Select
+            End If
+
+            ' Initialize the collection
+            Set uniqueCapacities = New Collection
+            On Error Resume Next ' Ignore errors caused by duplicate keys
+            For m = 2 To lastRowBins
+                list_capacity = wsBins.Cells(m, 10).Value
+                uniqueCapacities.Add list_capacity, CStr(list_capacity)
+            Next m
+            On Error GoTo 0 ' Turn back on regular error handling
+
+            ' Transfer collection to array
+            ReDim capacitiesArray(1 To uniqueCapacities.Count)
+            For m = 1 To uniqueCapacities.Count
+                capacitiesArray(m) = uniqueCapacities(m)
+            Next m
+
+            ' Sort the array in descending order
+            For x = LBound(capacitiesArray) To UBound(capacitiesArray) - 1
+                For y = x + 1 To UBound(capacitiesArray)
+                    If capacitiesArray(x) < capacitiesArray(y) Then
+                        temp = capacitiesArray(x)
+                        capacitiesArray(x) = capacitiesArray(y)
+                        capacitiesArray(y) = temp
+                    End If
+                Next y
+            Next x
+
+
+
+
+            For k = 2 To lastRowBins
+                allbins_BinName = wsBins.Cells(k, 2).Value
+                allbins_qty = wsBins.Cells(k, 11).Value
+                allbins_capacity = wsBins.Cells(k, 10).Value
+
+                For m = 1 To uniqueCapacities.Count
+                    unit_capacity = capacitiesArray(m)
+                    If unit_capacity > incomingQty and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            Dim allBin_Level As Integer
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+                            If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                wsBins.Cells(k, 11).Value = remainingQty
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        End If
+                    End If
+                Next m
+
+                For m = 1 To uniqueCapacities.Count
+                    unit_capacity = capacitiesArray(m)
+                    If unit_capacity = 20 And (unit_capacity +5)  > incomingQty and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+
+                            If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                wsOutput.Cells(i, 4).Value = "Check capacity"
+                                wsBins.Cells(k, 11).Value = remainingQty
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        End If
+                    ElseIf unit_capacity = 50 And (unit_capacity + 15) > incomingQty and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+                             If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                wsOutput.Cells(i, 4).Value = "Check capacity"
+                                wsBins.Cells(k, 11).Value = remainingQty
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        End If
+                    End If
+                Next m
+                'multi 
+
+                For m = 1 To uniqueCapacities.Count
+                    unit_capacity = capacitiesArray(m)
+                    If unit_capacity > incomingQty and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+                            If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & allbins_BinName & ", "
+                                wsBins.Cells(k, 11).Value = remainingQty
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        End If
+                    ElseIf unit_capacity < incomingQty And (unit_capacity * 2 ) - incomingQty > -1 and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+                            If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & allbins_BinName & ", "
+                                wsBins.Cells(k, 11).Value = unit_capacity
+                                remainingQty = remainingQty - unit_capacity
+                                Exit For
+                            End If
+                        End If
+                    End If
+                Next m
+
+                For m = 1 To uniqueCapacities.Count
+                    unit_capacity = capacitiesArray(m)
+                    If unit_capacity = 20 And (unit_capacity +5)  > incomingQty and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+
+                            If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                wsOutput.Cells(i, 4).Value = "Check capacity"
+                                wsBins.Cells(k, 11).Value = remainingQty
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        End IF
+                    ElseIf unit_capacity = 20 And (unit_capacity *2 +5) - incomingQty  > 0 and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+
+                            If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & allbins_BinName & ", "
+                                wsOutput.Cells(i, 4).Value = "Check capacity"
+                                wsBins.Cells(k, 11).Value = unit_capacity
+                                remainingQty = remainingQty - unit_capacity
+                                Exit For
+                            End If
+
+                        End If
+                    ElseIf unit_capacity = 50 And (unit_capacity + 15) > incomingQty and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+                             If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = allbins_BinName
+                                wsOutput.Cells(i, 4).Value = "Check capacity"
+                                wsBins.Cells(k, 11).Value = remainingQty
+                                remainingQty = 0
+                                Exit For
+                            End If
+                        End If
+                    ElseIf unit_capacity = 50 And (unit_capacity*2 + 15) - incomingQty > 0 and remainingQty > 0 Then
+                        If allbins_qty = 0 And allbins_capacity = unit_capacity And remainingQty >0 Then
+                            allBin_Level = ExtractBinLevel(allbins_BinName)
+                             If (allBin_Level - binLevel) = 0 Then                
+                                wsOutput.Cells(i, 3).Value = wsOutput.Cells(i, 3).Value & allbins_BinName & ", "
+                                wsOutput.Cells(i, 4).Value = "Check capacity"
+                                wsBins.Cells(k, 11).Value = unit_capacity
+                                remainingQty = remainingQty - unit_capacity
+                                Exit For
+                            End If
+                        End If
+                    End If
+                Next m
+
+
+            Next k
+
+        End If
+    Next i
+End Sub
+
+
+
+
+
+
